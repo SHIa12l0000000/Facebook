@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TheFacebook — Static Demo (GitHub Pages)</title>
+<style>
+  /* 2004 look + simple responsive layout */
+  :root{
+    --fb-blue:#3b5998; --muted:#6d84b4; --bg:#e9ebee;
+    --card:#fff; --maxw:980px;
+  }
+  *{box-sizing:border-box}
+  body{font-family: Arial, Helvetica, sans-serif;background:var(--bg);margin:0;color:#1d2129}
+  header{background:linear-gradient(#4b66a9,#39508b);color:#fff;padding:10px 16px}
+  header .brand{max-width:var(--maxw);margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+  header .brand h1{margin:0;font-size:20px;letter-spacing:-1px}
+  header .brand .user-info{font-size:14px}
+  .wrap{max-width:var(--maxw);margin:20px auto;display:flex;gap:20px;padding:0 12px}
+  .left{width:320px}
+  .center{flex:1}
+  .right{width:240px}
+  .card{background:var(--card);padding:12px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:12px}
+  .brand-box{background:transparent;color:#fff;margin-bottom:12px}
+  h2{margin:0 0 8px 0}
+  .small{font-size:13px;color:var(--muted)}
+  input[type=text], input[type=email], input[type=password], textarea, select{
+    width:100%;padding:8px;border:1px solid #d6d9e6;border-radius:4px;margin-top:6px;margin-bottom:8px;font-size:14px
+  }
+  textarea{resize:vertical}
+  .btn{background:var(--fb-blue);color:#fff;border:none;padding:8px 12px;border-radius:4px;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--fb-blue);border:1px solid var(--fb-blue)}
+  .meta{color:var(--muted);font-size:13px;margin-bottom:8px}
+  .post{margin-bottom:10px;padding:8px;border-radius:6px;background:#fff;border:1px solid #eef2fb}
+  .post .content{white-space:pre-wrap}
+  .mini{display:flex;align-items:center;gap:10px}
+  .avatar{width:48px;height:48px;border-radius:4px;background:#cfdaf6;display:inline-block}
+  a{color:var(--fb-blue);text-decoration:none}
+  footer{max-width:var(--maxw);margin:6px auto;color:#7f8da6;font-size:13px;text-align:center;padding:12px}
+  .flex{display:flex;gap:8px;align-items:center}
+  .row{display:flex;gap:8px}
+  .muted{color:var(--muted);font-size:13px}
+  @media(max-width:900px){.wrap{flex-direction:column}.left,.right{width:100%}}
+  /* small touches */
+  .friend-btn{font-size:13px;padding:6px 8px}
+  .notice{background:#fff5d6;padding:8px;border-radius:6px;border:1px solid #f1e0b3;margin-bottom:10px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>thefacebook (static demo)</h1>
+    <div class="user-info" id="topUser">Not signed in</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- LEFT -->
+  <aside class="left">
+    <div class="card brand-box">
+      <h2>Welcome</h2>
+      <div class="small">A client-side replica of the early site. Data is stored locally in your browser (localStorage).</div>
+    </div>
+
+    <div class="card" id="authBox">
+      <!-- dynamic: login or register or user info -->
+    </div>
+
+    <div class="card">
+      <strong>New to this demo?</strong>
+      <p class="small">Create a local account (stored only in your browser). You can create multiple accounts to simulate friend requests.</p>
+    </div>
+  </aside>
+
+  <!-- CENTER -->
+  <main class="center">
+    <div class="card" id="composerBox" style="display:none">
+      <h3>Post to your wall</h3>
+      <form id="postForm">
+        <textarea id="postText" placeholder="What's on your mind?" required rows="4"></textarea>
+        <div style="text-align:right">
+          <button class="btn" type="submit">Post</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="feed"></div>
+  </main>
+
+  <!-- RIGHT -->
+  <aside class="right">
+    <div class="card">
+      <strong>People</strong>
+      <div id="peopleList" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <strong>Friend Requests</strong>
+      <div id="incomingRequests" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <strong>Notes</strong>
+      <div class="small" style="margin-top:8px">This runs fully in your browser. To reset demo data, open browser devtools → Application → Local Storage → delete key <code>tf_demo</code>.</div>
+    </div>
+  </aside>
+</div>
+
+<footer>Demo: thefacebook look & basic behavior — client-only (GitHub Pages compatible)</footer>
+
+<script>
+/*
+  Client-side TheFacebook demo
+  - Data stored in localStorage under key "tf_demo"
+  - Supports: register, login, logout, edit profile (name/bio), post, friend request (between local accounts)
+*/
+
+// ---------- Storage helpers ----------
+const STORAGE_KEY = 'tf_demo_v1';
+
+// default initial seed
+const defaults = {
+  users: [
+    // example seeded user
+    { id: 1, name: 'Mark Zuckerberg', email: 'mark@demo.com', password: 'demo', bio: 'College student', avatar: '', created_at: new Date().toISOString() }
+  ],
+  posts: [
+    { id: 1, user_id: 1, content: 'Just launched the site — demo post!', created_at: new Date().toISOString() }
+  ],
+  friends: [
+    // { requester: 1, requested: 2, status: 1 }
+  ],
+  nextUserId: 2,
+  nextPostId: 2,
+  // session holds current signed-in user id
+  session: { user_id: null }
+};
+
+function loadState(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
+    return JSON.parse(JSON.stringify(defaults));
+  }
+  try {
+    const obj = JSON.parse(raw);
+    // if older shape, unify
+    if (!obj.nextUserId) obj.nextUserId = (obj.users?.length || 0) + 1;
+    if (!obj.nextPostId) obj.nextPostId = (obj.posts?.length || 0) + 1;
+    return obj;
+  } catch(e) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults));
+    return JSON.parse(JSON.stringify(defaults));
+  }
+}
+
+function saveState(st){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
+}
+
+// ---------- Utility ----------
+function esc(s){ return String(s || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+function currentState(){ return loadState(); }
+function me(){ const s = currentState(); return s.session.user_id ? s.users.find(u=>u.id===s.session.user_id) || null : null; }
+
+// ---------- UI rendering ----------
+const authBox = document.getElementById('authBox');
+const topUser = document.getElementById('topUser');
+const composerBox = document.getElementById('composerBox');
+const feedEl = document.getElementById('feed');
+const peopleList = document.getElementById('peopleList');
+const incomingRequests = document.getElementById('incomingRequests');
+
+function renderAuth(){
+  const st = currentState();
+  const user = me();
+  topUser.innerHTML = user ? `Signed in: <strong>${esc(user.name)}</strong>` : 'Not signed in';
+
+  if (!user){
+    authBox.innerHTML = `
+      <h3>Log in</h3>
+      <form id="loginForm" class="small">
+        <label>Email</label>
+        <input id="loginEmail" type="email" required placeholder="email@example.com">
+        <label>Password</label>
+        <input id="loginPass" type="password" required placeholder="demo">
+        <div class="row" style="margin-top:6px">
+          <button class="btn" type="submit">Log in</button>
+          <button id="showRegister" class="btn ghost" type="button">Register</button>
+        </div>
+      </form>
+      <hr>
+      <div class="small muted">Tip: seed account: <strong>mark@demo.com / demo</strong></div>
+    `;
+    composerBox.style.display = 'none';
+    document.getElementById('loginForm').addEventListener('submit', onLogin);
+    document.getElementById('showRegister').addEventListener('click', showRegisterForm);
+  } else {
+    authBox.innerHTML = `
+      <h3>${esc(user.name)}</h3>
+      <div class="small">${esc(user.email)}</div>
+      <div class="small" style="margin-top:8px">${esc(user.bio || 'No bio')}</div>
+      <div style="margin-top:10px" class="row">
+        <button id="editProfile" class="btn ghost">Edit Profile</button>
+        <button id="logoutBtn" class="btn">Logout</button>
+      </div>
+    `;
+    composerBox.style.display = 'block';
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+    document.getElementById('editProfile').addEventListener('click', showEditProfile);
+  }
+}
+
+function showRegisterForm(){
+  authBox.innerHTML = `
+    <h3>Create account</h3>
+    <form id="registerForm" class="small">
+      <label>Full name</label>
+      <input id="regName" type="text" required placeholder="Full name">
+      <label>Email</label>
+      <input id="regEmail" type="email" required placeholder="you@school.edu">
+      <label>Password</label>
+      <input id="regPass" type="password" required placeholder="choose a password">
+      <div class="row" style="margin-top:6px">
+        <button class="btn" type="submit">Create</button>
+        <button id="showLogin" class="btn ghost" type="button">Back</button>
+      </div>
+    </form>
+  `;
+  document.getElementById('registerForm').addEventListener('submit', onRegister);
+  document.getElementById('showLogin').addEventListener('click', renderAuth);
+}
+
+function showEditProfile(){
+  const u = me();
+  if (!u) return;
+  authBox.innerHTML = `
+    <h3>Edit profile</h3>
+    <form id="editForm" class="small">
+      <label>Name</label><input id="editName" type="text" value="${esc(u.name)}" required>
+      <label>Bio</label><textarea id="editBio" rows="3">${esc(u.bio || '')}</textarea>
+      <div class="row" style="margin-top:6px">
+        <button class="btn" type="submit">Save</button>
+        <button id="cancelEdit" class="btn ghost" type="button">Cancel</button>
+      </div>
+    </form>
+  `;
+  document.getElementById('editForm').addEventListener('submit', e=>{
+    e.preventDefault();
+    const st = currentState();
+    const user = st.users.find(x=>x.id===st.session.user_id);
+    user.name = document.getElementById('editName').value.trim() || user.name;
+    user.bio = document.getElementById('editBio').value.trim();
+    saveState(st); renderAll();
+  });
+  document.getElementById('cancelEdit').addEventListener('click', renderAuth);
+}
+
+function renderFeed(){
+  const st = currentState();
+  feedEl.innerHTML = '';
+  if (!st.posts || st.posts.length===0){
+    feedEl.innerHTML = '<div class="card"><div class="small">No posts yet — be the first!</div></div>';
+    return;
+  }
+  // sort posts desc by created_at (newest first)
+  const posts = [...st.posts].sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
+  for (const p of posts){
+    const author = st.users.find(u=>u.id===p.user_id) || {name:'Unknown'};
+    const postNode = document.createElement('div');
+    postNode.className = 'post card';
+    postNode.innerHTML = `
+      <div class="mini" style="margin-bottom:6px">
+        <div class="avatar" aria-hidden="true"></div>
+        <div>
+          <div><strong>${esc(author.name)}</strong></div>
+          <div class="muted">${new Date(p.created_at).toLocaleString()}</div>
+        </div>
+      </div>
+      <div class="content">${esc(p.content)}</div>
+      ${ renderPostActions(p) }
+    `;
+    feedEl.appendChild(postNode);
+  }
+}
+
+function renderPostActions(post){
+  const user = me();
+  // allow delete if owner
+  if (user && user.id === post.user_id){
+    return `<div style="text-align:right;margin-top:8px"><button class="btn ghost" onclick="deletePost(${post.id})">Delete</button></div>`;
+  }
+  return '';
+}
+
+function renderPeople(){
+  const st = currentState();
+  peopleList.innerHTML = '';
+  const signed = me();
+  const others = st.users.filter(u => !signed ? true : u.id !== signed.id);
+  if (others.length===0){ peopleList.innerHTML = '<div class="small">No users yet.</div>'; return; }
+  for (const u of others){
+    const div = document.createElement('div');
+    div.style.marginBottom='8px';
+    // compute relationship
+    let relation = '';
+    if (signed){
+      const f = st.friends.find(fr => (fr.requester===signed.id && fr.requested===u.id) || (fr.requester===u.id && fr.requested===signed.id));
+      if (f){
+        if (f.status === 1) relation = '<span class="muted">Friends</span>';
+        else {
+          if (f.requester === signed.id) relation = '<span class="muted">Request sent</span>';
+          else relation = `<button class="btn friend-btn" onclick="acceptRequest(${u.id})">Accept</button>`;
+        }
+      } else {
+        relation = `<button class="btn friend-btn" onclick="sendRequest(${u.id})">Add Friend</button>`;
+      }
+    } else {
+      relation = '<span class="muted">Sign in to interact</span>';
+    }
+    div.innerHTML = `<div style="display:flex;gap:8px;align-items:center">
+      <div class="avatar"></div>
+      <div style="flex:1">
+        <div><strong>${esc(u.name)}</strong></div>
+        <div class="small">${esc(u.email)}</div>
+      </div>
+      <div style="min-width:110px;text-align:right">${relation}</div>
+    </div>`;
+    peopleList.appendChild(div);
+  }
+}
+
+function renderIncomingRequests(){
+  const st = currentState();
+  incomingRequests.innerHTML = '';
+  const signed = me();
+  if (!signed){ incomingRequests.innerHTML = '<div class="small">Sign in to see requests</div>'; return; }
+  const incoming = st.friends.filter(fr => fr.requested === signed.id && fr.status === 0);
+  if (incoming.length === 0){ incomingRequests.innerHTML = '<div class="small">No incoming requests</div>'; return; }
+  for (const r of incoming){
+    const requester = st.users.find(u=>u.id===r.requester);
+    const row = document.createElement('div');
+    row.style.marginBottom='8px';
+    row.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
+      <div><strong>${esc(requester.name)}</strong><div class="small">${esc(requester.email)}</div></div>
+      <div>
+        <button class="btn friend-btn" onclick="acceptRequest(${requester.id})">Accept</button>
+        <button class="btn ghost friend-btn" onclick="declineRequest(${requester.id})">Decline</button>
+      </div>
+    </div>`;
+    incomingRequests.appendChild(row);
+  }
+}
+
+function renderAll(){
+  renderAuth(); renderFeed(); renderPeople(); renderIncomingRequests();
+}
+
+// ---------- Actions ----------
+function onLogin(e){
+  e.preventDefault();
+  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+  const pass = document.getElementById('loginPass').value;
+  const st = currentState();
+  const user = st.users.find(u=>u.email.toLowerCase()===email);
+  if (!user || user.password !== pass){
+    alert('Invalid email or password (demo).');
+    return;
+  }
+  st.session.user_id = user.id;
+  saveState(st);
+  document.getElementById('loginForm').reset();
+  renderAll();
+}
+
+function onRegister(e){
+  e.preventDefault();
+  const name = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim().toLowerCase();
+  const pass = document.getElementById('regPass').value;
+  if (!name || !email || !pass) { alert('Fill all fields'); return; }
+  const st = currentState();
+  if (st.users.find(u=>u.email.toLowerCase()===email)){
+    alert('Email already registered in this browser demo.');
+    return;
+  }
+  const uid = st.nextUserId++;
+  st.users.push({ id: uid, name, email, password: pass, bio: '', avatar: '', created_at: new Date().toISOString() });
+  st.session.user_id = uid;
+  saveState(st);
+  renderAll();
+}
+
+function logout(){
+  const st = currentState();
+  st.session.user_id = null;
+  saveState(st);
+  renderAll();
+}
+
+document.getElementById('postForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const txt = document.getElementById('postText').value.trim();
+  if (!txt) return alert('Write something to post.');
+  const st = currentState();
+  if (!st.session.user_id) return alert('Sign in to post.');
+  const pid = st.nextPostId++;
+  st.posts.push({ id: pid, user_id: st.session.user_id, content: txt, created_at: new Date().toISOString() });
+  saveState(st);
+  document.getElementById('postText').value = '';
+  renderAll();
+});
+
+// friend requests
+function sendRequest(toId){
+  const st = currentState();
+  const from = st.session.user_id;
+  if (!from) return alert('Sign in to send friend requests.');
+  if (from === toId) return alert('Cannot friend yourself.');
+  // ignore duplicate
+  if (st.friends.find(fr => (fr.requester===from && fr.requested===toId) || (fr.requester===toId && fr.requested===from))) {
+    alert('Request already exists or you are already friends.');
+    return;
+  }
+  st.friends.push({ requester: from, requested: toId, status: 0, created_at: new Date().toISOString() });
+  saveState(st); renderAll();
+}
+
+function acceptRequest(fromId){
+  const st = currentState();
+  const meId = st.session.user_id;
+  if (!meId) return alert('Sign in to accept.');
+  const f = st.friends.find(fr => fr.requester===fromId && fr.requested===meId && fr.status===0);
+  if (!f) return alert('Request not found.');
+  f.status = 1;
+  saveState(st); renderAll();
+}
+
+function declineRequest(fromId){
+  const st = currentState();
+  const meId = st.session.user_id;
+  const idx = st.friends.findIndex(fr => fr.requester===fromId && fr.requested===meId && fr.status===0);
+  if (idx>=0) {
+    st.friends.splice(idx,1);
+    saveState(st); renderAll();
+  }
+}
+
+function deletePost(postId){
+  const st = currentState();
+  const postIndex = st.posts.findIndex(p=>p.id===postId);
+  if (postIndex === -1) return;
+  const confirmed = confirm('Delete this post?');
+  if (!confirmed) return;
+  st.posts.splice(postIndex,1);
+  saveState(st); renderAll();
+}
+
+// init listeners
+function init(){
+  // attach global behavior for delegated buttons inside feed (delete uses inline onclick)
+  // register forms that are dynamically inserted
+  renderAll();
+}
+
+// run
+init();
+
+// Expose some actions for inline handlers (deletePost called inline)
+window.deletePost = deletePost;
+window.sendRequest = sendRequest;
+window.acceptRequest = acceptRequest;
+window.declineRequest = declineRequest;
+
+</script>
+</body>
+</html>
